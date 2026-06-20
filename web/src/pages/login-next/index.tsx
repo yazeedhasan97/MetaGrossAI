@@ -1,4 +1,5 @@
 import SvgIcon from '@/components/svg-icon';
+import { useIsDarkTheme } from '@/components/theme-provider';
 import { useAuth } from '@/hooks/auth-hooks';
 import {
   useLogin,
@@ -8,11 +9,12 @@ import {
 } from '@/hooks/use-login-request';
 import { useSystemConfig } from '@/hooks/use-system-request';
 import { rsaPsw } from '@/utils';
-import { useContext, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
-import Spotlight from '@/components/spotlight';
+import ThemeLogo from '@/components/theme-logo';
+import ThemeSwitch from '@/components/theme-switch';
 import { Button, ButtonLoading } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -25,15 +27,54 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import HCaptcha from '@hcaptcha/react-hcaptcha';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
-import { BgSvg } from './bg';
-import FlipCard3D, { FlipFaceContext } from './card';
 import './index.less';
+// ─── Left Panel (full background image) ───────────────────────────────────────
 
-type LoginFormContentProps = {
-  isLoginPage: boolean;
+function LeftPanel() {
+  return (
+    <div
+      className="hidden lg:flex lg:flex-col lg:justify-between relative w-1/2 min-h-screen overflow-hidden"
+      style={{
+        backgroundImage: "url('bgImage.png')", // ← replace with your image path
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }}
+    >
+      {/* Dark overlay for readability */}
+      <div className="absolute inset-0 bg-black/50" />
+
+      {/* Content on top of image */}
+      <div className="relative z-10 flex flex-col h-full p-12">
+        {/* Logo */}
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 border border-white/20">
+            <ThemeLogo className="h-7 w-7" />
+          </div>
+          <span className="text-xl font-semibold text-white">MetaGross-AI</span>
+        </div>
+
+        {/* Tagline */}
+        <div className="mt-auto space-y-4 pb-8">
+          <h2 className="text-4xl font-semibold text-white leading-tight">
+            Web access for AI-powered workflows
+          </h2>
+          <p className="text-base text-white/70 leading-relaxed max-w-sm">
+            Launch agents, explore workflows, and manage your AI workspace from
+            any browser. Trusted performance for everything your team builds.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Form ─────────────────────────────────────────────────────────────────────
+
+type AuthFormProps = {
   title: string;
   form: UseFormReturn<any>;
   loading: boolean;
@@ -44,10 +85,12 @@ type LoginFormContentProps = {
   handleLoginWithChannel: (channel: string) => void;
   t: ReturnType<typeof useTranslation>['t'];
   disablePasswordLogin?: boolean;
+  requireCaptcha: boolean;
+  captchaKey: string | undefined;
+  captchaRef: React.RefObject<HCaptcha>;
 };
 
-function LoginFormContent({
-  isLoginPage,
+function AuthForm({
   title,
   form,
   loading,
@@ -58,37 +101,72 @@ function LoginFormContent({
   handleLoginWithChannel,
   t,
   disablePasswordLogin,
-}: LoginFormContentProps) {
-  const face = useContext(FlipFaceContext);
-  const isActiveFace = isLoginPage ? face === 'front' : face === 'back';
+  requireCaptcha,
+  captchaKey,
+  captchaRef,
+}: AuthFormProps) {
+  const isLogin = title === 'login';
+  const navigate = useNavigate();
+  const pageTitle = isLogin
+    ? 'Sign in to MetaGross-AI'
+    : 'Create your MetaGross-AI account';
+  const pageDescription = isLogin
+    ? 'Use your credentials to access the AI workspace and manage your workflows.'
+    : 'Join MetaGross-AI to start using agents, automations, and smart dashboards.';
+
+  const isDark = useIsDarkTheme();
 
   return (
-    <div className="flex flex-col items-center justify-center w-full">
-      <div className="text-center mb-8">
-        <h2 className="text-xl font-semibold text-text-primary">
-          {title === 'login' ? t('loginTitle') : t('signUpTitle')}
+    <div className="flex flex-col w-full max-w-[460px]">
+      {/* Header */}
+      <div className="mb-8">
+        <h2 className="text-3xl font-semibold text-text-primary">
+          {pageTitle}
         </h2>
+        <p className="mt-2 text-sm text-text-secondary">{pageDescription}</p>
       </div>
-      <div className=" w-full max-w-[540px] bg-bg-component backdrop-blur-sm rounded-2xl shadow-xl pt-14 pl-10 pr-10 pb-2 border border-border-button ">
-        {!disablePasswordLogin && (
-          <Form {...form}>
-            <form
-              className="flex flex-col gap-8 text-text-primary "
-              data-testid="auth-form"
-              data-active={isActiveFace ? 'true' : undefined}
-              onSubmit={form.handleSubmit(onCheck)}
-            >
+
+      {/* Password-based form */}
+      {!disablePasswordLogin && (
+        <Form {...form}>
+          <form
+            className="flex flex-col gap-5"
+            data-testid="auth-form"
+            onSubmit={form.handleSubmit(onCheck)}
+          >
+            {/* Email */}
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel required>{t('emailLabel')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      data-testid="auth-email"
+                      placeholder={t('emailPlaceholder')}
+                      autoComplete="email"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Nickname — register only */}
+            {!isLogin && (
               <FormField
                 control={form.control}
-                name="email"
+                name="nickname"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel required>{t('emailLabel')}</FormLabel>
+                    <FormLabel required>{t('nicknameLabel')}</FormLabel>
                     <FormControl>
                       <Input
-                        data-testid="auth-email"
-                        placeholder={t('emailPlaceholder')}
-                        autoComplete="email"
+                        data-testid="auth-nickname"
+                        placeholder={t('nicknamePlaceholder')}
+                        autoComplete="username"
                         {...field}
                       />
                     </FormControl>
@@ -96,69 +174,49 @@ function LoginFormContent({
                   </FormItem>
                 )}
               />
-              {title === 'register' && (
-                <FormField
-                  control={form.control}
-                  name="nickname"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel required>{t('nicknameLabel')}</FormLabel>
-                      <FormControl>
-                        <Input
-                          data-testid="auth-nickname"
-                          placeholder={t('nicknamePlaceholder')}
-                          autoComplete="username"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+            )}
+
+            {/* Password */}
+            <FormField
+              control={form.control}
+              name="password"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel required>{t('passwordLabel')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      data-testid="auth-password"
+                      type="password"
+                      placeholder={t('passwordPlaceholder')}
+                      autoComplete={
+                        isLogin ? 'current-password' : 'new-password'
+                      }
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
               )}
+            />
 
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel required>{t('passwordLabel')}</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Input
-                          data-testid="auth-password"
-                          type={'password'}
-                          placeholder={t('passwordPlaceholder')}
-                          autoComplete={
-                            title === 'login'
-                              ? 'current-password'
-                              : 'new-password'
-                          }
-                          {...field}
-                        />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {title === 'login' && (
+            {/* Forgot password + Remember me row — login only */}
+            {isLogin && (
+              <div className="flex items-center justify-between -mt-1">
                 <FormField
                   control={form.control}
                   name="remember"
                   render={({ field }) => (
                     <FormItem>
                       <FormControl>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 items-center">
                           <Checkbox
                             checked={field.value}
-                            onCheckedChange={(checked) => {
-                              field.onChange(checked);
-                            }}
+                            onCheckedChange={(checked) =>
+                              field.onChange(checked)
+                            }
                           />
                           <FormLabel
-                            className={cn(' hover:text-text-primary', {
+                            className={cn('cursor-pointer', {
                               'text-text-disabled': !field.value,
                               'text-text-primary': field.value,
                             })}
@@ -167,81 +225,118 @@ function LoginFormContent({
                           </FormLabel>
                         </div>
                       </FormControl>
+                    </FormItem>
+                  )}
+                />
+                <Button
+                  variant="static"
+                  type="button"
+                  onClick={() => navigate('/forgot-password')}
+                  className="!text-[var(--accent-primary)] hover:!text-[var(--accent-primary)]/90 text-sm font-medium p-0"
+                >
+                  {t('forget')}
+                </Button>
+              </div>
+            )}
+
+            {requireCaptcha && (
+              <div className="flex justify-left">
+                <FormField
+                  control={form.control}
+                  name="hcaptcha_token"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <HCaptcha
+                          key={captchaKey}
+                          ref={captchaRef}
+                          theme={isDark ? 'dark' : 'light'}
+                          sitekey="bcf819c2-a604-4008-9c6a-a37e84cec112"
+                          onVerify={(token) => field.onChange(token)}
+                          onExpire={() => field.onChange('')}
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-              )}
-              <ButtonLoading
-                data-testid="auth-submit"
-                type="submit"
-                loading={loading}
-                className="bg-metallic-gradient border-b-[#00BEB4] border-b-2 hover:bg-metallic-gradient hover:border-b-[#02bcdd] w-full my-8"
-              >
-                {title === 'login' ? t('login') : t('continue')}
-              </ButtonLoading>
-            </form>
-          </Form>
-        )}
+              </div>
+            )}
 
-        {title === 'login' && channels && channels.length > 0 && (
-          <div className={disablePasswordLogin ? 'py-8' : 'mt-3 border'}>
-            {channels.map((item) => (
-              <Button
-                variant={'transparent'}
-                key={item.channel}
-                onClick={() => handleLoginWithChannel(item.channel)}
-                style={{ marginTop: 10 }}
-                className={disablePasswordLogin ? 'w-full' : ''}
-              >
-                <div className="flex items-center">
-                  <SvgIcon
-                    name={item.icon || 'sso'}
-                    width={20}
-                    height={20}
-                    style={{ marginRight: 5 }}
-                  />
-                  Sign in with {item.display_name}
-                </div>
-              </Button>
-            ))}
-          </div>
-        )}
+            {/* Submit */}
+            <ButtonLoading
+              data-testid="auth-submit"
+              type="submit"
+              loading={loading}
+              className="bg-[var(--button-primary)] hover:bg-[var(--button-primary-hover)] w-full mt-2"
+            >
+              {isLogin ? t('login') : t('continue')}
+            </ButtonLoading>
+          </form>
+        </Form>
+      )}
 
-        {!disablePasswordLogin && title === 'login' && registerEnabled && (
-          <div className="mt-10 text-right">
-            <p className="text-text-disabled text-sm">
+      {/* SSO channels — login only */}
+      {isLogin && channels && channels.length > 0 && (
+        <div
+          className={cn('mt-4', {
+            'py-4': disablePasswordLogin,
+            'border-t mt-6 pt-4': !disablePasswordLogin,
+          })}
+        >
+          {channels.map((item) => (
+            <Button
+              variant="transparent"
+              key={item.channel}
+              onClick={() => handleLoginWithChannel(item.channel)}
+              className={cn('mt-2', { 'w-full': disablePasswordLogin })}
+            >
+              <div className="flex items-center gap-2">
+                <SvgIcon name={item.icon || 'sso'} width={20} height={20} />
+                Sign in with {item.display_name}
+              </div>
+            </Button>
+          ))}
+        </div>
+      )}
+
+      {/* Switch between login / register */}
+      {!disablePasswordLogin && (
+        <p className="mt-8 text-center text-sm text-text-secondary">
+          {isLogin ? (
+            <>
               {t('signInTip')}
-              <Button
-                data-testid="auth-toggle-register"
-                variant={'transparent'}
-                onClick={changeTitle}
-                className="text-accent-primary/90 hover:text-accent-primary hover:bg-transparent font-medium border-none transition-colors duration-200"
-              >
-                {t('signUp')}
-              </Button>
-            </p>
-          </div>
-        )}
-        {!disablePasswordLogin && title === 'register' && (
-          <div className="mt-10 text-right">
-            <p className="text-text-disabled text-sm">
+              {registerEnabled && (
+                <Button
+                  data-testid="auth-toggle-register"
+                  variant="static"
+                  onClick={changeTitle}
+                  className="!text-[var(--accent-primary)] hover:!text-[var(--accent-primary)]/90 font-medium ml-1"
+                >
+                  {t('signUp')}
+                </Button>
+              )}
+            </>
+          ) : (
+            <>
               {t('signUpTip')}
               <Button
                 data-testid="auth-toggle-login"
-                variant={'transparent'}
+                variant="static"
                 onClick={changeTitle}
-                className="text-accent-primary/90 hover:text-accent-primary hover:bg-transparent font-medium border-none transition-colors duration-200"
+                className="!text-[var(--accent-primary)] hover:!text-[var(--accent-primary)]/90 font-medium ml-1"
               >
                 {t('login')}
               </Button>
-            </p>
-          </div>
-        )}
-      </div>
+            </>
+          )}
+        </p>
+      )}
     </div>
   );
 }
+
+// ─── Main Page ─────────────────────────────────────────────────────────────────
 
 const Login = () => {
   const [title, setTitle] = useState('login');
@@ -252,7 +347,12 @@ const Login = () => {
   const { login: loginWithChannel, loading: loginWithChannelLoading } =
     useLoginWithChannel();
   const { t } = useTranslation('translation', { keyPrefix: 'login' });
-  const [isLoginPage, setIsLoginPage] = useState(true);
+
+  const [requireCaptcha, setRequireCaptcha] = useState(true);
+  const [captchaKey, setCaptchaKey] = useState<string>(() =>
+    crypto.randomUUID(),
+  );
+  const captchaRef = useRef<HCaptcha>(null);
 
   const loading =
     signLoading ||
@@ -262,26 +362,18 @@ const Login = () => {
   const { config } = useSystemConfig();
   const registerEnabled = config?.registerEnabled !== 0;
 
-  const { isLogin } = useAuth();
+  const { isLogin: isLoggedIn } = useAuth();
   useEffect(() => {
-    if (isLogin) {
-      navigate('/');
-    }
-  }, [isLogin, navigate]);
+    if (isLoggedIn) navigate('/');
+  }, [isLoggedIn, navigate]);
 
   const handleLoginWithChannel = async (channel: string) => {
     await loginWithChannel(channel);
   };
 
   const changeTitle = () => {
-    setIsLoginPage(title !== 'login');
-    if (title === 'login' && !registerEnabled) {
-      return;
-    }
-
-    setTimeout(() => {
-      setTitle(title === 'login' ? 'register' : 'login');
-    }, 200);
+    if (title === 'login' && !registerEnabled) return;
+    setTitle(title === 'login' ? 'register' : 'login');
   };
 
   const FormSchema = z
@@ -293,6 +385,7 @@ const Login = () => {
         .min(1, { message: t('emailPlaceholder') }),
       password: z.string().min(1, { message: t('passwordPlaceholder') }),
       remember: z.boolean().optional(),
+      hcaptcha_token: z.string().optional(),
     })
     .superRefine((data, ctx) => {
       if (title === 'register' && !data.nickname) {
@@ -303,28 +396,29 @@ const Login = () => {
         });
       }
     });
+
   type FormValues = z.infer<typeof FormSchema>;
+
   const form = useForm<FormValues>({
-    defaultValues: {
-      nickname: '',
-      email: '',
-      password: '',
-      remember: false,
-    },
+    defaultValues: { nickname: '', email: '', password: '', remember: false },
     resolver: zodResolver(FormSchema),
   });
 
   const onCheck = async (params: FormValues) => {
+    if (requireCaptcha && !params.hcaptcha_token) return;
     try {
       const rsaPassWord = rsaPsw(params.password) as string;
-
       if (title === 'login') {
         const code = await login({
           email: `${params.email}`.trim(),
           password: rsaPassWord,
+          hcaptcha_token: params.hcaptcha_token || '',
         });
-        if (code === 0) {
-          navigate('/');
+        if (code === 0) navigate('/');
+        // If your API signals captcha_required via an error code or flag:
+        if (code === 'captcha_required') {
+          setRequireCaptcha(true);
+          setCaptchaKey(crypto.randomUUID());
         }
       } else {
         const code = await register({
@@ -332,70 +426,44 @@ const Login = () => {
           email: params.email,
           password: rsaPassWord,
         });
-        if (code === 0) {
-          setTitle('login');
-        }
+        if (code === 0) setTitle('login');
       }
-    } catch (errorInfo) {
+    } catch (errorInfo: any) {
+      setCaptchaKey(crypto.randomUUID());
+      if (errorInfo?.captcha_required) setRequireCaptcha(true);
       console.log('Failed:', errorInfo);
     }
   };
 
   return (
-    <>
-      <Spotlight opcity={0.4} coverage={60} color={'rgb(128, 255, 248)'} />
-      <Spotlight
-        opcity={0.3}
-        coverage={12}
-        X={'10%'}
-        Y={'-10%'}
-        color={'rgb(128, 255, 248)'}
-      />
-      <Spotlight
-        opcity={0.3}
-        coverage={12}
-        X={'90%'}
-        Y={'-10%'}
-        color={'rgb(128, 255, 248)'}
-      />
-      <div className=" h-[inherit] relative overflow-auto">
-        <BgSvg isPaused />
+    <div className="flex min-h-screen bg-bg-card">
+      {/* Left: full background image */}
+      <LeftPanel />
 
-        <div className="z-20 absolute top-3 flex flex-col items-center mb-12 w-full text-text-primary">
-          <div className="flex items-center mb-4 w-full pl-10 pt-10 ">
-            <div className="w-12 h-12 p-2 rounded-lg flex items-center justify-center mr-3">
-              <img
-                src={'/logo.svg'}
-                alt="logo"
-                className="size-8 mr-[12] cursor-pointer"
-              />
-            </div>
-            <div className="text-xl font-bold self-center">RAGFlow</div>
-          </div>
-          <h1 className="text-[36px] font-medium  text-center mb-2">
-            {t('title')}
-          </h1>
+      {/* Right: form panel */}
+      <div className="flex flex-1 flex-col items-center justify-center px-8 py-12 relative">
+        {/* Theme switch top-right */}
+        <div className="absolute top-6 right-6">
+          <ThemeSwitch />
         </div>
-        <div className="relative z-10 flex flex-col items-center justify-center min-h-[1050px] px-4 sm:px-6 lg:px-8">
-          {/* Login Form */}
-          <FlipCard3D isLoginPage={isLoginPage}>
-            <LoginFormContent
-              isLoginPage={isLoginPage}
-              title={title}
-              form={form}
-              loading={loading}
-              onCheck={onCheck}
-              changeTitle={changeTitle}
-              registerEnabled={registerEnabled}
-              channels={channels || []}
-              handleLoginWithChannel={handleLoginWithChannel}
-              t={t}
-              disablePasswordLogin={!!config?.disablePasswordLogin}
-            />
-          </FlipCard3D>
-        </div>
+
+        <AuthForm
+          title={title}
+          form={form}
+          loading={loading}
+          onCheck={onCheck}
+          changeTitle={changeTitle}
+          registerEnabled={registerEnabled}
+          channels={channels || []}
+          handleLoginWithChannel={handleLoginWithChannel}
+          t={t}
+          disablePasswordLogin={!!config?.disablePasswordLogin}
+          requireCaptcha={requireCaptcha}
+          captchaKey={captchaKey}
+          captchaRef={captchaRef}
+        />
       </div>
-    </>
+    </div>
   );
 };
 
