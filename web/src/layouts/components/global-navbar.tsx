@@ -49,7 +49,7 @@ const GlobalNavbar = supportsCssAnchor
         return (
           Object.keys(PathMap).find((x: string) =>
             PathMap[x as keyof typeof PathMap].some((y: string) =>
-              pathname.includes(y),
+              matchesPath(pathname, y),
             ),
           ) || pathname
         );
@@ -115,7 +115,7 @@ const GlobalNavbar = supportsCssAnchor
         return (
           Object.keys(PathMap).find((x: string) =>
             PathMap[x as keyof typeof PathMap].some((y: string) =>
-              pathname.includes(y),
+              matchesPath(pathname, y),
             ),
           ) || pathname
         );

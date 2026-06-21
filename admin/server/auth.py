@@ -113,8 +113,6 @@ def init_default_admin():
 
 
 def add_tenant_for_admin(user_info: dict, role: str):
-    from api.db.services.tenant_llm_service import TenantLLMService
-    from api.db.services.llm_service import get_init_tenant_llm
 
     tenant = {
         "id": user_info["id"],
@@ -128,7 +126,7 @@ def add_tenant_for_admin(user_info: dict, role: str):
     }
     usr_tenant = {"tenant_id": user_info["id"], "user_id": user_info["id"], "invited_by": user_info["id"], "role": role}
 
-    tenant_llm = get_init_tenant_llm(user_info["id"])
+    # tenant_llm = get_init_tenant_llm(user_info["id"])
     TenantService.insert(**tenant)
     UserTenantService.insert(**usr_tenant)
     TenantLLMService.insert_many(tenant_llm)

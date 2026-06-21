@@ -79,6 +79,7 @@ function MessageItem({
   children,
   showLog,
   isShare,
+  nickname,
 }: IProps) {
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;

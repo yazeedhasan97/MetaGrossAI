@@ -378,7 +378,7 @@ const Login = () => {
 
   const FormSchema = z
     .object({
-      nickname: z.string(),
+      nickname: z.string().optional(),
       email: z
         .string()
         .email()
@@ -388,10 +388,19 @@ const Login = () => {
       hcaptcha_token: z.string().optional(),
     })
     .superRefine((data, ctx) => {
-      if (title === 'register' && !data.nickname) {
+      if (title !== 'register') return;
+      if (!data.nickname) {
         ctx.addIssue({
           path: ['nickname'],
           message: 'nicknamePlaceholder',
+          code: z.ZodIssueCode.custom,
+        });
+        return;
+      }
+      if (!NICKNAME_PATTERN.test(data.nickname)) {
+        ctx.addIssue({
+          path: ['nickname'],
+          message: tSetting('usernameInvalidCharacters'),
           code: z.ZodIssueCode.custom,
         });
       }

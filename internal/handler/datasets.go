@@ -171,6 +171,48 @@ func (h *DatasetsHandler) GetDataset(c *gin.Context) {
 	})
 }
 
+// UpdateDataset Update a dataset.
+func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeDataError, "user id is required")
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetID == "" {
+		jsonError(c, common.CodeBadRequest, "dataset id is required")
+		return
+	}
+
+	var req service.UpdateDatasetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	result, code, err := h.datasetsService.UpdateDataset(datasetID, userID, req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+	if code != common.CodeSuccess {
+		jsonError(c, code, "dataset updated failed")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": common.CodeSuccess,
+		"data": result,
+	})
+}
+
 func (h *DatasetsHandler) GetMetadataConfig(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -373,7 +415,7 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 	exists, err := docEngine.ChunkStoreExists(c.Request.Context(), indexName, datasetID)
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		jsonInternalError(c, err)
 		return
 	}
 
@@ -398,7 +440,7 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 		},
 	})
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		jsonInternalError(c, err)
 		return
 	}
 	if searchResult == nil || len(searchResult.Chunks) == 0 {
@@ -473,7 +515,7 @@ func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
 	if _, err := docEngine.DeleteChunks(c.Request.Context(), map[string]interface{}{
 		"knowledge_graph_kwd": []string{"graph", "subgraph", "entity", "relation", "community_report"},
 	}, indexName, datasetID); err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		jsonInternalError(c, err)
 		return
 	}
 
@@ -550,6 +592,74 @@ func (h *DatasetsHandler) RemoveTags(c *gin.Context) {
 	jsonResponse(c, common.CodeSuccess, true, "success")
 }
 
+// RunIndex Run an indexing task (graph/raptor/mindmap) for a dataset.
+func (h *DatasetsHandler) RunIndex(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetID == "" {
+		jsonError(c, common.CodeDataError, "dataset_id is required")
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeDataError, "user_id is required")
+		return
+	}
+
+	indexType := strings.ToLower(strings.TrimSpace(c.Query("type")))
+	data, code, err := h.datasetsService.RunIndex(userID, datasetID, indexType)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, data, "success")
+}
+
+// TraceIndex Trace an indexing task (graph/raptor/mindmap) for a dataset.
+func (h *DatasetsHandler) TraceIndex(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetID == "" {
+		jsonError(c, common.CodeDataError, "dataset_id is required")
+		return
+	}
+
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeDataError, "user_id is required")
+		return
+	}
+
+	indexType := strings.ToLower(strings.TrimSpace(c.Query("type")))
+	result, code, err := h.datasetsService.TraceIndex(datasetID, userID, indexType)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+	if result == nil {
+		jsonResponse(c, common.CodeSuccess, map[string]interface{}{}, "success")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    result,
+		"message": "success",
+	})
+}
+
 // ListMetadataFlattened handles GET /api/v1/datasets/metadata/flattened.
 // @Summary List flattened metadata for datasets
 // @Description Get flattened metadata for multiple datasets
@@ -600,6 +710,48 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 	}
 
 	jsonResponse(c, common.CodeSuccess, flattenedMeta, "success")
+}
+
+func (h *DatasetsHandler) UpdateDocumentMetadataConfig(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetID == "" {
+		jsonError(c, common.CodeArgumentError, "dataset_id is required")
+		return
+	}
+	documentID := strings.TrimSpace(c.Param("document_id"))
+	if documentID == "" {
+		jsonError(c, common.CodeArgumentError, "document_id is required")
+		return
+	}
+	userID := strings.TrimSpace(user.ID)
+	if userID == "" {
+		jsonError(c, common.CodeArgumentError, "user_id is required")
+		return
+	}
+
+	var req map[string]interface{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	data, code, err := h.datasetsService.UpdateDocumentMetadataConfig(userID, datasetID, documentID, req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    code,
+		"data":    data,
+		"message": "success",
+	})
 }
 
 // SearchDatasets searches chunks across datasets based on a question
